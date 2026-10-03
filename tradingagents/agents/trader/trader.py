@@ -5,6 +5,7 @@ from __future__ import annotations
 from langchain_core.messages import AIMessage
 
 from tradingagents.agents.context import (
+    get_client_profile_context_from_state,
     get_instrument_context_from_state,
     get_language_instruction,
     get_portfolio_context_from_state,
@@ -23,6 +24,7 @@ def create_trader(llm):
     def trader_node(state):
         company_name = state["company_of_interest"]
         instrument_context = get_instrument_context_from_state(state)
+        client_profile_context = get_client_profile_context_from_state(state)
         investment_plan = state["investment_plan"]
         # The research plan digests the debate but loses exact price structure;
         # give the Trader the technical market report so entry/stop levels are
@@ -66,6 +68,7 @@ def create_trader(llm):
                 "content": (
                     f"Here is the research team's investment plan for {company_name}. "
                     f"{instrument_context}\n\n"
+                    f"{client_profile_context}\n\n"
                     f"{report_section}"
                     f"{portfolio_context}\n\n"
                     f"Proposed Investment Plan:\n{investment_plan}\n\n"

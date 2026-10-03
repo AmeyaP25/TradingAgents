@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 import typer
 
@@ -7,6 +8,13 @@ from cli.models import AnalystType, AssetType
 from cli.prompts import filter_analysts_for_asset_type, parse_analysts
 from cli.run import run_analysis
 from tradingagents.backtest import iter_grid, run_backtest, summarize
+from tradingagents.client_profile import (
+    apply_client_profile_overrides,
+    extract_client_profile,
+    load_client_profile,
+    load_overrides,
+    save_client_profile,
+)
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.portfolio import load_portfolio
 
@@ -29,6 +37,21 @@ app = typer.Typer(
 )
 
 
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind."),
+    port: int = typer.Option(8000, "--port", help="Port to listen on."),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload for local development."),
+):
+    """Run a local HTTP API server."""
+    try:
+        import uvicorn
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]uvicorn is required to run the API server: {exc}[/red]")
+        raise typer.Exit(code=1) from None
+    uvicorn.run("tradingagents.local_api:create_app", factory=True, host=host, port=port, reload=reload)
+
+
 @app.callback(invoke_without_command=True)
 def analyze(
     ctx: typer.Context,
@@ -48,6 +71,26 @@ def analyze(
         "--portfolio",
         help="JSON file with current holdings and cash, so the trader, risk and "
         "portfolio agents size against your actual position.",
+    ),
+    client_profile: str = typer.Option(
+        None,
+        "--client-profile",
+        help="JSON file with a structured client profile.",
+    ),
+    client_case_study: str = typer.Option(
+        None,
+        "--client-case-study",
+        help="Text file containing the client case study to parse into a structured profile.",
+    ),
+    client_profile_overrides: str = typer.Option(
+        None,
+        "--client-profile-overrides",
+        help="JSON file with partial fields to override extracted or loaded client profile values.",
+    ),
+    save_client_profile_to: str = typer.Option(
+        None,
+        "--save-client-profile",
+        help="Write the resolved client profile JSON to this path before analysis.",
     ),
     ticker: str = typer.Option(None, "--ticker", help="Ticker to analyze, e.g. NVDA or 0700.HK; skips the prompt"),
     date: str = typer.Option(None, "--date", help="Analysis date, YYYY-MM-DD; skips the prompt"),
@@ -79,10 +122,64 @@ def analyze(
         except ValueError as exc:
             console.print(f"[red]{exc}[/red]")
             raise typer.Exit(code=1) from None
+    profile = None
+    if client_profile and client_case_study:
+        console.print("[red]Use either --client-profile or --client-case-study, not both.[/red]")
+        raise typer.Exit(code=1)
+    if client_profile:
+        try:
+            profile = load_client_profile(client_profile)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from None
+    if client_case_study:
+        try:
+            case_text = Path(client_case_study).read_text(encoding="utf-8")
+        except OSError as exc:
+            console.print(f"[red]Could not read case-study file: {exc}[/red]")
+            raise typer.Exit(code=1) from None
+        profile = extract_client_profile(case_text)
+        console.print("\n[bold cyan]Extracted Client Profile (review before analysis):[/bold cyan]\n")
+        console.print(profile.model_dump_json(indent=2))
+        approved = typer.prompt(
+            "Use this extracted profile? (Y to continue, anything else to cancel)",
+            default="Y",
+        ).strip().upper() in ("Y", "YES", "")
+        if not approved:
+            console.print("[yellow]Cancelled before analysis so you can edit the profile.[/yellow]")
+            raise typer.Exit(code=0)
+    if client_profile_overrides:
+        if profile is None:
+            console.print("[red]--client-profile-overrides requires --client-profile or --client-case-study.[/red]")
+            raise typer.Exit(code=1)
+        try:
+            overrides = load_overrides(client_profile_overrides)
+            profile = apply_client_profile_overrides(profile, overrides)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from None
+        console.print("\n[bold cyan]Client Profile after overrides:[/bold cyan]\n")
+        console.print(profile.model_dump_json(indent=2))
+        approved = typer.prompt(
+            "Use this resolved profile? (Y to continue, anything else to cancel)",
+            default="Y",
+        ).strip().upper() in ("Y", "YES", "")
+        if not approved:
+            console.print("[yellow]Cancelled before analysis so you can edit overrides.[/yellow]")
+            raise typer.Exit(code=0)
+    if save_client_profile_to and profile is not None:
+        try:
+            save_client_profile(profile, save_client_profile_to)
+        except OSError as exc:
+            console.print(f"[red]Could not save client profile: {exc}[/red]")
+            raise typer.Exit(code=1) from None
 
     try:
         flags = {"ticker": ticker, "date": date, "analysts": analysts, "save": save, "show": show}
-        run_analysis(checkpoint=checkpoint, portfolio=portfolio_context, flags=flags)
+        kwargs = {"checkpoint": checkpoint, "portfolio": portfolio_context, "flags": flags}
+        if profile is not None:
+            kwargs["client_profile"] = profile
+        run_analysis(**kwargs)
     except _NO_CONSOLE_ERRORS:
         # A terminal with no console buffer cannot host the interactive prompts.
         # Emit one actionable line on stderr instead of a prompt_toolkit
@@ -109,6 +206,9 @@ def backtest(
     portfolio: str = typer.Option(
         None, "--portfolio", help="JSON file with holdings and cash, held constant across the grid"
     ),
+    client_profile: str = typer.Option(
+        None, "--client-profile", help="JSON file with structured client profile for every grid cell"
+    ),
     run_id: str = typer.Option(
         None, "--run-id", help="Continue an earlier sweep: its cells are skipped and its log reused"
     ),
@@ -118,6 +218,7 @@ def backtest(
     try:
         dates = iter_grid(start, end, every)
         book = load_portfolio(portfolio) if portfolio else None
+        profile = load_client_profile(client_profile) if client_profile else None
         kind = AssetType(asset_type.strip().lower())
         # The analysts are named and checked as for an analysis; without a
         # choice, every analyst the asset type allows runs.
@@ -135,7 +236,7 @@ def backtest(
     def show_progress(done, total, ticker, date):
         console.print(f"[dim][{done}/{total}] {ticker} {date}[/dim]")
 
-    kwargs = {"asset_type": kind.value, "portfolio": book, "run_id": run_id, "progress": show_progress,
+    kwargs = {"asset_type": kind.value, "portfolio": book, "client_profile": profile, "run_id": run_id, "progress": show_progress,
               "selected_analysts": [a.value for a in chosen]}
 
     try:

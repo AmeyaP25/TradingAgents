@@ -94,7 +94,7 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     return config
 
 
-def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
+def run_analysis(checkpoint: bool | None = None, portfolio=None, client_profile=None, flags=None):
     flags = flags or {}
     # With no terminal nothing can answer a prompt: name every question still
     # open before any model is called, rather than stopping at the first one.
@@ -213,9 +213,9 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
 
         # The same initial state propagate() builds: settled memory log, past
         # context and resolved instrument identity.
-        init_agent_state = graph.create_run_state(
-            selections["ticker"], selections["analysis_date"], selections["asset_type"], portfolio
-        )
+        run_key = (selections["ticker"], selections["analysis_date"], selections["asset_type"], portfolio)
+        profile_kwargs = {"client_profile": client_profile} if client_profile is not None else {}
+        init_agent_state = graph.create_run_state(*run_key, **profile_kwargs)
         # Pass callbacks to graph config for tool execution tracking
         # (LLM tracking is handled separately via LLM constructor)
         args = graph.propagator.get_graph_args(callbacks=[stats_handler])
@@ -223,9 +223,7 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
         # Recompile with a checkpointer and inject the thread_id so --checkpoint
         # actually saves and resumes on the CLI path (#1249); a no-op when
         # checkpointing is disabled. Torn down in the finally below.
-        checkpoint_tid = graph.begin_checkpoint(
-            selections["ticker"], selections["analysis_date"], selections["asset_type"], portfolio
-        )
+        checkpoint_tid = graph.begin_checkpoint(*run_key, **profile_kwargs)
         if checkpoint_tid is not None:
             args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = checkpoint_tid
             _announce_checkpoint_state(graph, selections["ticker"], selections["analysis_date"])
@@ -348,9 +346,7 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
             # later run starts fresh. A mid-stream failure skips both, keeping
             # the checkpoint for resume.
             graph.record_decision(selections["ticker"], selections["analysis_date"], final_state)
-            graph.clear_checkpoint_on_success(
-                selections["ticker"], selections["analysis_date"], selections["asset_type"], portfolio
-            )
+            graph.clear_checkpoint_on_success(*run_key, **profile_kwargs)
         finally:
             # Always restore the plain uncheckpointed graph, even on failure.
             graph.end_checkpoint()

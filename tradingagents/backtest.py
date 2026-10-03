@@ -132,6 +132,7 @@ def run_backtest(
     config: dict,
     asset_type: str = "stock",
     portfolio=None,
+    client_profile=None,
     selected_analysts=("market", "social", "news", "fundamentals"),
     run_id: str | None = None,
     progress: Callable[[int, int, str, str], None] | None = None,
@@ -164,7 +165,10 @@ def run_backtest(
         if progress:
             progress(index, len(todo), ticker, date)
         try:
-            graph.propagate(ticker, date, asset_type, portfolio=portfolio)
+            if client_profile is None:
+                graph.propagate(ticker, date, asset_type, portfolio=portfolio)
+            else:
+                graph.propagate(ticker, date, asset_type, portfolio=portfolio, client_profile=client_profile)
             result.cells_run += 1
         except Exception as exc:  # one unreachable vendor must not end the sweep
             logger.warning("Backtest cell %s %s failed: %s", ticker, date, exc)

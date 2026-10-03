@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TradingAgents · Client-Aware Research Terminal</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">TA</div>
+        <div>
+          <div class="brand-name">TradingAgents</div>
+          <div class="brand-sub">Research Terminal</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-label">Workflow</div>
+        <button class="nav-item active" data-view="profile">
+          <span class="step-num" id="stepBadge1">1</span>
+          <span><b>Client Profile</b><small>Extract &amp; approve</small></span>
+        </button>
+        <button class="nav-item" data-view="portfolio">
+          <span class="step-num" id="stepBadge2">2</span>
+          <span><b>Live Portfolio</b><small>Your holdings</small></span>
+        </button>
+        <button class="nav-item" data-view="stock">
+          <span class="step-num" id="stepBadge3">3</span>
+          <span><b>Stock Signal</b><small>When to buy / sell</small></span>
+        </button>
+        <button class="nav-item" data-view="alerts">
+          <span class="nav-icon">&#128276;</span>
+          <span><b>Alerts</b><small>Buy / sell notifications</small></span>
+          <span class="nav-badge hidden" id="navAlertBadge">0</span>
+        </button>
+
+        <div class="nav-label">AI Research</div>
+        <button class="nav-item" data-view="analysis">
+          <span class="nav-icon">&#9672;</span>
+          <span><b>Deep AI Analysis</b><small>Multi-agent report</small></span>
+        </button>
+        <button class="nav-item" data-view="scanner">
+          <span class="nav-icon">&#9638;</span>
+          <span><b>Opportunity Scanner</b><small>Rank many companies</small></span>
+        </button>
+        <button class="nav-item" data-view="backtest">
+          <span class="nav-icon">&#8635;</span>
+          <span><b>Backtest</b><small>Evaluate over time</small></span>
+        </button>
+        <button class="nav-item" data-view="settings">
+          <span class="nav-icon">&#9881;</span>
+          <span><b>Settings</b><small>Agents &amp; models</small></span>
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="user-box">
+          <div><span class="muted">Signed in as</span><b id="userName">…</b></div>
+          <button id="logoutBtn" class="btn ghost small">Log out</button>
+        </div>
+        <div class="disclaimer">
+          Research guidance only. Nothing here executes trades or guarantees profit. You make the final decision.
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="viewTitle">Client Profile</h1>
+          <div id="viewSub" class="muted">Step 1: paste the case study, review what was extracted, then approve it.</div>
+        </div>
+        <div class="top-right">
+          <button class="bell" id="bellBtn" title="Alerts">&#128276;<span class="count hidden" id="bellCount">0</span></button>
+          <div class="live-chip" id="liveChip"><span class="dot"></span><span id="liveText">Live off</span></div>
+          <div class="chip" id="profileChip">No profile</div>
+          <div class="chip" id="healthBadge">API…</div>
+        </div>
+      </header>
+
+      <div id="toast" class="toast hidden"></div>
+
+      <!-- STEP 1: PROFILE -->
+      <section class="view active" id="view-profile">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head">
+              <h2>Case study</h2>
+              <span class="tag">Original text is kept verbatim</span>
+            </div>
+            <textarea id="caseStudyText" rows="18" placeholder="Paste the full client case study here…"></textarea>
+            <div class="row">
+              <button id="extractProfileBtn" class="btn primary">Extract profile</button>
+              <button id="clearProfileBtn" class="btn ghost">Clear</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>Extracted profile</h2>
+              <span id="profileState" class="tag warn">Not approved</span>
+            </div>
+            <div id="profileReview" class="profile-review">
+              <div class="empty-state">Extract a profile from the case study to review it here.</div>
+            </div>
+            <details class="advanced">
+              <summary>Edit raw profile JSON</summary>
+              <textarea id="clientProfileJson" rows="14" spellcheck="false"></textarea>
+              <button id="reloadReviewBtn" class="btn ghost small">Refresh review from JSON</button>
+            </details>
+            <div class="row">
+              <button id="approveProfileBtn" class="btn primary">Approve profile &amp; continue</button>
+              <button id="revokeProfileBtn" class="btn ghost">Revoke approval</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 2: PORTFOLIO -->
+      <section class="view" id="view-portfolio">
+        <div class="stats">
+          <div class="stat"><div class="stat-label">Market value</div><div class="stat-value" id="totValue">—</div></div>
+          <div class="stat"><div class="stat-label">Today</div><div class="stat-value" id="totDay">—</div></div>
+          <div class="stat"><div class="stat-label">Unrealized P&amp;L</div><div class="stat-value" id="totPL">—</div></div>
+          <div class="stat"><div class="stat-label">Available cash</div><div class="stat-value" id="totCash">—</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Add an investment</h2>
+            <span class="tag">Saved locally on this machine</span>
+          </div>
+          <div class="form-inline">
+            <label>Ticker<input id="hTicker" placeholder="e.g. AAPL"></label>
+            <label>Shares<input id="hShares" type="number" min="0" step="any" placeholder="10"></label>
+            <label>Avg cost / share<input id="hCost" type="number" min="0" step="any" placeholder="optional"></label>
+            <label>Stop-loss %<input id="hStop" type="number" min="1" max="99" step="any" placeholder="from profile"></label>
+            <button id="addHoldingBtn" class="btn primary">Add / update</button>
+          </div>
+          <p class="hint">Enter 0 shares to put a stock on your watchlist. Leave stop-loss blank to use the default for the client's risk level.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Holdings</h2>
+            <div class="row tight">
+              <span class="muted small" id="quotesUpdated">Not updated yet</span>
+              <button id="refreshQuotesBtn" class="btn ghost small">Refresh now</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="holdingsTable">
+              <thead>
+                <tr>
+                  <th>Symbol</th><th class="num">Price</th><th class="num">Day</th><th class="num">Shares</th>
+                  <th class="num">Value</th><th class="num">P&amp;L</th><th>Signal</th><th>Suggested trade</th><th></th>
+                </tr>
+              </thead>
+              <tbody><tr><td colspan="9" class="empty">No holdings yet. Add one above.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 3: STOCK -->
+      <section class="view" id="view-stock">
+        <div class="card">
+          <div class="stock-head">
+            <div>
+              <div class="row tight">
+                <select id="stockPicker" class="picker"></select>
+                <input id="stockLookup" class="lookup" placeholder="or type any ticker">
+                <button id="stockLookupBtn" class="btn ghost small">Load</button>
+              </div>
+              <div class="price-line">
+                <span class="big-price" id="sPrice">—</span>
+                <span class="change" id="sChange"></span>
+              </div>
+              <div class="muted small" id="sMeta">Select a holding to see live data.</div>
+            </div>
+            <div class="ranges" id="rangeTabs">
+              <button data-range="1d">1D</button><button data-range="5d">5D</button>
+              <button data-range="1mo">1M</button><button data-range="6mo" class="active">6M</button>
+              <button data-range="1y">1Y</button><button data-range="5y">5Y</button>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <svg id="chart" viewBox="0 0 1000 340" preserveAspectRatio="none"></svg>
+            <div id="chartTip" class="chart-tip hidden"></div>
+          </div>
+          <div class="legend">
+            <span><i class="lg price"></i>Price</span>
+            <span><i class="lg cost"></i>Your cost</span>
+            <span><i class="lg stop"></i>Stop-loss</span>
+            <span><i class="lg trend"></i>200-day trend line</span>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card signal-card">
+            <div class="card-head">
+              <h2>Buy / sell timing</h2>
+              <span class="tag">Rule-based, not AI</span>
+            </div>
+            <div id="signalBody"><div class="empty-state">Pick a stock to compute its signal.</div></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <h2>Why, and how it fits the client</h2>
+              <span class="tag" id="signalProfileTag">Profile</span>
+            </div>
+            <div id="signalWhy"><div class="empty-state">Reasons appear here.</div></div>
+            <div class="row">
+              <button id="deepFromStockBtn" class="btn primary">Run deep AI analysis on this stock</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Price alert for this stock</h2>
+            <span class="tag">Notifies you when the price crosses a level</span>
+          </div>
+          <div class="form-inline">
+            <label>When price goes
+              <select id="paDirection"><option value="below">below</option><option value="above">above</option></select>
+            </label>
+            <label>Price<input id="paPrice" type="number" min="0" step="any" placeholder="e.g. 300"></label>
+            <label class="grow">Note (optional)<input id="paNote" placeholder="e.g. consider adding here"></label>
+            <button id="addPriceAlertBtn" class="btn primary">Add alert</button>
+          </div>
+          <div class="row" id="paQuick"></div>
+        </div>
+      </section>
+
+      <!-- ALERTS -->
+      <section class="view" id="view-alerts">
+        <div class="card">
+          <div class="card-head">
+            <h2>Buy / sell alerts</h2>
+            <div class="row tight">
+              <span class="muted small" id="monitorStatus">Monitor starting…</span>
+              <button id="enableNotifBtn" class="btn ghost small">Enable desktop notifications</button>
+              <button id="checkNowBtn" class="btn ghost small">Check now</button>
+              <button id="markAllReadBtn" class="btn ghost small">Mark all read</button>
+            </div>
+          </div>
+          <p class="hint" style="margin:0 0 14px">The app re-checks every holding automatically. When the rules turn to BUY, ADD, TRIM or SELL it tells you how many shares, and saves the alert to your database. These are research alerts; you place any trade yourself.</p>
+          <div id="alertList" class="alert-list"><div class="empty-state">No alerts yet. Add holdings and alerts will appear here automatically.</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Your price alerts</h2></div>
+          <div class="table-wrap">
+            <table class="table" id="priceAlertTable">
+              <thead><tr><th>Symbol</th><th>Condition</th><th>Note</th><th>Status</th><th></th></tr></thead>
+              <tbody><tr><td colspan="5" class="empty">No price alerts. Add one from a stock's page.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- AI ANALYSIS -->
+      <section class="view" id="view-analysis">
+        <div class="card">
+          <div class="card-head">
+            <h2>Deep multi-agent analysis</h2>
+            <span class="tag">Requires an LLM API key</span>
+          </div>
+          <div class="form-inline">
+            <label>Ticker<input id="ticker" value="NVDA"></label>
+            <label>As-of date<input id="tradeDate" type="date"></label>
+            <label class="check-inline"><input type="checkbox" id="useHoldings" checked> Include my holdings as portfolio context</label>
+            <button id="runAnalysisBtn" class="btn primary">Run analysis</button>
+          </div>
+          <p class="hint">Analysts, debate, trader, risk team and portfolio manager all receive the approved Step 1 profile. This can take several minutes.</p>
+        </div>
+        <div id="analysisResult"></div>
+      </section>
+
+      <!-- SCANNER -->
+      <section class="view" id="view-scanner">
+        <div class="card">
+          <div class="card-head">
+            <h2>Opportunity scanner</h2>
+            <span class="tag">Live signals now, AI ranking optional</span>
+          </div>
+          <div class="form-inline">
+            <label class="grow">Candidate tickers<input id="scanTickers" value="NVDA,MSFT,GOOGL,AAPL,AMZN,JNJ,PG,KO"></label>
+            <button id="runQuickScanBtn" class="btn primary">Quick scan (live rules)</button>
+            <button id="runScanBtn" class="btn ghost">Deep AI scan</button>
+          </div>
+          <p class="hint">Quick scan uses live prices and the rule-based signal adjusted to the client profile (free, seconds). Deep AI scan runs the full multi-agent analysis per ticker (needs a key, slow).</p>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table class="table" id="scanTable">
+              <thead><tr><th>#</th><th>Symbol</th><th class="num">Price</th><th>Signal</th><th>Confidence</th><th>Notes</th><th></th></tr></thead>
+              <tbody><tr><td colspan="7" class="empty">No scan results yet.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- BACKTEST -->
+      <section class="view" id="view-backtest">
+        <div class="card">
+          <div class="card-head">
+            <h2>Backtest</h2>
+            <span class="tag">Requires an LLM API key</span>
+          </div>
+          <div class="form-inline">
+            <label>Tickers<input id="backtestTickers" value="NVDA,AAPL"></label>
+            <label>Start<input id="backtestStart" type="date" value="2026-06-01"></label>
+            <label>End<input id="backtestEnd" type="date" value="2026-08-01"></label>
+            <label>Every N days<input id="backtestEvery" type="number" min="1" value="7"></label>
+            <button id="runBacktestBtn" class="btn primary">Run backtest</button>
+          </div>
+        </div>
+        <div class="card"><pre id="backtestOut" class="out">No backtest run yet.</pre></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="view" id="view-settings">
+        <div class="card">
+          <div class="card-head"><h2>Trading &amp; alerts</h2><span class="tag">Saved to your database</span></div>
+          <div class="toggle-row"><span>Available cash to invest (used to size BUY / ADD suggestions)</span><input id="setCash" type="number" min="0" step="any" placeholder="e.g. 25000"></div>
+          <div class="toggle-row"><span>Max size of any one position (% of portfolio; blank = by client risk level)</span><input id="setMaxPct" type="number" min="1" max="100" step="any" placeholder="auto"></div>
+          <div class="toggle-row"><span>Automatic buy / sell alerts</span><input id="setAlerts" type="checkbox" checked></div>
+          <div class="toggle-row"><span>Desktop notifications</span><input id="setNotif" type="checkbox" checked></div>
+          <div class="toggle-row"><span>Alert sound</span><input id="setSound" type="checkbox" checked></div>
+          <div class="row"><button id="saveSettingsBtn" class="btn primary">Save settings</button></div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h2>Agent team</h2></div>
+            <div class="checks">
+              <label><input type="checkbox" value="market" checked> Market / technical</label>
+              <label><input type="checkbox" value="social" checked> Social sentiment</label>
+              <label><input type="checkbox" value="news" checked> News</label>
+              <label><input type="checkbox" value="fundamentals" checked> Fundamentals</label>
+            </div>
+            <label class="block">Asset type
+              <select id="assetType"><option value="stock">stock</option><option value="crypto">crypto</option></select>
+            </label>
+            <label class="block">Live refresh interval
+              <select id="refreshInterval">
+                <option value="10">10 seconds</option>
+                <option value="15" selected>15 seconds</option>
+                <option value="30">30 seconds</option>
+                <option value="60">60 seconds</option>
+                <option value="0">Off</option>
+              </select>
+            </label>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>Model config overrides</h2><span class="tag">Optional JSON</span></div>
+            <textarea id="configOverridesJson" rows="8" spellcheck="false" placeholder='{"llm_provider":"openai","quick_think_llm":"gpt-6-luna","deep_think_llm":"gpt-6-sol"}'></textarea>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

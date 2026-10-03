@@ -1,4 +1,4 @@
-"""Prompt context shared by the agents: instrument identity, output language and portfolio."""
+"""Prompt context shared by the agents: instrument identity, output language, portfolio, and client profile."""
 
 import functools
 import logging
@@ -215,4 +215,20 @@ def get_portfolio_context_from_state(state: Mapping[str, Any]) -> str:
         "Portfolio context: not provided. You do not know the caller's current "
         "holdings or cash, so do not assume a flat book; give direction and "
         "sizing guidance in terms the caller can apply to their own position."
+    )
+
+
+def get_client_profile_context_from_state(state: Mapping[str, Any]) -> str:
+    """Return the caller's client-profile block, or a notice that none was given.
+
+    A run without client context must not invent goals, constraints, or risk
+    tolerance from the analyst's own assumptions.
+    """
+    context = state.get("client_profile_context")
+    if isinstance(context, str) and context.strip():
+        return context
+    return (
+        "Client profile context: not provided. Do not assume unstated client "
+        "goals, restrictions, risk tolerance, liabilities, or liquidity needs. "
+        "Flag unknown client-specific requirements explicitly."
     )

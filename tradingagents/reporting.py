@@ -9,6 +9,8 @@ run produces the same on-disk report tree a CLI run does.
 from datetime import datetime
 from pathlib import Path
 
+from tradingagents.recommendation_report import RecommendationReport, render_recommendation_report
+
 
 def _header(ticker: str, final_state: dict, settings: dict | None) -> str:
     """The report's title and what produced it: analysis date, version, models, analysts, vendors."""
@@ -38,6 +40,13 @@ def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict 
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     sections = []
+
+    # 0. Client profile context
+    if final_state.get("client_profile_context"):
+        client_dir = save_path / "0_client"
+        client_dir.mkdir(exist_ok=True)
+        (client_dir / "profile.md").write_text(final_state["client_profile_context"], encoding="utf-8")
+        sections.append(f"## 0. Client Profile\n\n{final_state['client_profile_context']}")
 
     # 1. Analysts
     analysts_dir = save_path / "1_analysts"
@@ -117,6 +126,17 @@ def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict 
         portfolio_dir.mkdir(exist_ok=True)
         (portfolio_dir / "decision.md").write_text(final_state["final_trade_decision"], encoding="utf-8")
         sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{final_state['final_trade_decision']}")
+
+    # 6. Structured recommendation report
+    report_data = final_state.get("structured_recommendation_report")
+    if isinstance(report_data, dict) and report_data:
+        rec_dir = save_path / "6_recommendation"
+        rec_dir.mkdir(exist_ok=True)
+        report = RecommendationReport.model_validate(report_data)
+        (rec_dir / "report.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        rendered = render_recommendation_report(report)
+        (rec_dir / "report.md").write_text(rendered, encoding="utf-8")
+        sections.append(f"## VI. Structured Recommendation\n\n{rendered}")
 
     # Write consolidated report
     (save_path / "complete_report.md").write_text(

@@ -18,6 +18,8 @@ class Propagator:
         past_context: str = "",
         instrument_context: str = "",
         portfolio_context: str = "",
+        client_profile_context: str = "",
+        client_profile_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create the initial state for the agent graph.
 
@@ -35,6 +37,8 @@ class Propagator:
             "trade_date": str(trade_date),
             "past_context": past_context,
             "portfolio_context": portfolio_context,
+            "client_profile_context": client_profile_context,
+            "client_profile_data": client_profile_data or {},
             "investment_debate_state": InvestDebateState(
                 {
                     "bull_history": "",
@@ -61,6 +65,8 @@ class Propagator:
             "fundamentals_report": "",
             "sentiment_report": "",
             "news_report": "",
+            "structured_recommendation_report": {},
+            "client_constraint_violations": [],
         }
 
     def get_graph_args(self, callbacks: list | None = None) -> dict[str, Any]:

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · TradingAgents</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body class="login-body">
+  <div class="login-shell">
+    <section class="login-art">
+      <div class="brand">
+        <div class="brand-mark">TA</div>
+        <div>
+          <div class="brand-name">TradingAgents</div>
+          <div class="brand-sub">Research Terminal</div>
+        </div>
+      </div>
+      <div class="login-pitch">
+        <h1>Client-aware investment research, live.</h1>
+        <ul>
+          <li><span class="bullet up"></span>Live quotes and charts for every holding</li>
+          <li><span class="bullet"></span>Automatic buy / sell alerts with share counts</li>
+          <li><span class="bullet violet"></span>Every call tailored to the approved client profile</li>
+        </ul>
+      </div>
+      <svg class="login-spark" viewBox="0 0 600 160" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="lg" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="#4f8cff" stop-opacity=".35"/>
+            <stop offset="100%" stop-color="#4f8cff" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path d="M0,130 L40,118 L80,124 L120,100 L160,108 L200,84 L240,92 L280,70 L320,78 L360,52 L400,64 L440,40 L480,48 L520,26 L560,34 L600,14 L600,160 L0,160 Z" fill="url(#lg)"/>
+        <path d="M0,130 L40,118 L80,124 L120,100 L160,108 L200,84 L240,92 L280,70 L320,78 L360,52 L400,64 L440,40 L480,48 L520,26 L560,34 L600,14" fill="none" stroke="#4f8cff" stroke-width="2.5"/>
+      </svg>
+      <div class="disclaimer">Research guidance only. Nothing here executes trades or guarantees profit.</div>
+    </section>
+
+    <section class="login-panel">
+      <form id="loginForm" class="login-card" autocomplete="on" novalidate>
+        <h2>Sign in</h2>
+        <p class="muted">Use your team account to continue.</p>
+
+        <label class="field">Username
+          <input id="username" name="username" autocomplete="username" required autofocus>
+        </label>
+        <label class="field">Password
+          <div class="pw-wrap">
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <button type="button" id="togglePw" class="pw-toggle" aria-label="Show password">Show</button>
+          </div>
+        </label>
+
+        <label class="remember">
+          <input type="checkbox" id="remember"> Remember me for 30 days
+        </label>
+
+        <div id="loginError" class="login-error hidden" role="alert"></div>
+
+        <button type="submit" id="loginBtn" class="btn primary block-btn">Sign in</button>
+        <p class="hint center">Accounts are issued by your team; there is no sign-up.</p>
+      </form>
+    </section>
+  </div>
+  <script src="/assets/login.js"></script>
+</body>
+</html>

@@ -1,16 +1,10 @@
-from tradingagents.default_config import DEFAULT_CONFIG
-from tradingagents.graph.trading_graph import TradingAgentsGraph
+"""ASGI entrypoint for deployment platforms (for example, Vercel).
 
-# DEFAULT_CONFIG already applies TRADINGAGENTS_* env-var overrides
-# (llm_provider, deep_think_llm, quick_think_llm, backend_url, etc.),
-# so users can switch models or endpoints purely via .env without
-# editing this script. Override individual keys here only when you
-# want a hard-coded value that should ignore the environment.
-config = DEFAULT_CONFIG.copy()
+This module exports a top-level ``app`` object so hosts can import it without
+executing a one-off analysis run.
+"""
 
-# Initialize with custom config
-ta = TradingAgentsGraph(debug=True, config=config)
+from tradingagents.local_api import create_app
 
-# forward propagate
-_, decision = ta.propagate("NVDA", "2026-09-01")
-print(decision)
+# Vercel/ASGI runtime looks for one of: app, application, or handler.
+app = create_app()

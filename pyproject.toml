@@ -53,6 +53,9 @@ include = ["tradingagents*", "cli*"]
 [tool.setuptools.package-data]
 cli = ["static/*"]
 
+[tool.vercel]
+entrypoint = "main:app"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers -m \"not integration\""

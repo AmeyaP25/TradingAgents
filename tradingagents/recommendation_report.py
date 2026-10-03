@@ -59,6 +59,7 @@ def build_recommendation_report(final_state: dict, violations: list[ConstraintVi
     rating = run_rating(final_state)
     profile_context = (final_state.get("client_profile_context") or "").strip()
     profile_present = bool(profile_context)
+    blocking_violations = [v for v in violations if v.severity == "blocking"]
     confidence = "Medium"
     uncertainty = (
         "Model-based recommendation with market and prompt uncertainty; validate assumptions before action."
@@ -66,6 +67,10 @@ def build_recommendation_report(final_state: dict, violations: list[ConstraintVi
     if rating == "REVIEW":
         confidence = "Low"
         uncertainty = "No parseable final rating detected; requires human review before use."
+    if blocking_violations:
+        rating = "REVIEW"
+        confidence = "Low"
+        uncertainty = "Blocking client-constraint violations were detected; do not treat this as a suitable recommendation."
 
     sources = []
     if final_state.get("fundamentals_report"):
@@ -103,6 +108,9 @@ def build_recommendation_report(final_state: dict, violations: list[ConstraintVi
         bull_case=_debate_side((final_state.get("investment_debate_state") or {}).get("bull_history", ""), "Bull Analyst:"),
         bear_case=_debate_side((final_state.get("investment_debate_state") or {}).get("bear_history", ""), "Bear Analyst:"),
         client_fit=(
+            "Client profile was provided and integrated in agent prompts. "
+            "Blocking client-constraint violations were detected, so this run is not suitable as a final client recommendation."
+            if (profile_present and blocking_violations) else
             "Client profile was provided and integrated in agent prompts. "
             "Validate extracted hard constraints and suitability narrative before final submission."
             if profile_present else

@@ -61,6 +61,15 @@ def test_constraint_detector_flags_outside_funding_dependency():
 
 
 @pytest.mark.unit
+def test_report_forces_review_when_blocking_constraints_exist():
+    state = _state()
+    state["final_trade_decision"] = "Use outside funding for payments if markets weaken."
+    report = build_recommendation_report(state, evaluate_client_constraints(state))
+    assert report.recommendation == "REVIEW"
+    assert "Blocking client-constraint violations" in report.uncertainty
+
+
+@pytest.mark.unit
 def test_rendered_report_contains_required_sections():
     state = _state()
     report = build_recommendation_report(state, evaluate_client_constraints(state))

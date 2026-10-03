@@ -13,7 +13,9 @@ import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
+import requests
 from pydantic import BaseModel, Field, ValidationError
 
 
@@ -62,6 +64,8 @@ class ClientProfile(BaseModel):
     wins_universe_rule: str = (
         "Only recommend instruments tradable in the competition simulator."
     )
+    external_client_research_notes: list[str] = Field(default_factory=list)
+    external_research_sources: list[str] = Field(default_factory=list)
 
     def render(self, ticker: str | None = None) -> str:
         symbol = f" for `{ticker}`" if ticker else ""
@@ -119,6 +123,13 @@ class ClientProfile(BaseModel):
         if self.ambiguous_items:
             lines.extend(["", "Ambiguities needing review:"])
             lines.extend([f"- {item}" for item in self.ambiguous_items])
+
+        if self.external_client_research_notes:
+            lines.extend(["", "External client-context research (retrieved, not inferred):"])
+            lines.extend([f"- {item}" for item in self.external_client_research_notes])
+        if self.external_research_sources:
+            lines.extend(["", "External research sources:"])
+            lines.extend([f"- {item}" for item in self.external_research_sources])
 
         lines.extend([
             "",
@@ -326,7 +337,43 @@ def extract_client_profile(case_text: str) -> ClientProfile:
         profile.ambiguous_items.append(
             "No explicit year-to-index timeline mapping extracted; verify relative-year interpretation."
         )
+    _enrich_with_external_client_context(profile)
     return profile
+
+
+def _enrich_with_external_client_context(profile: ClientProfile) -> None:
+    """Best-effort external lookup for additional client context.
+
+    This never fabricates details: it only stores retrieved summaries and URLs.
+    Failures are recorded as unknown instead of guessed values.
+    """
+    name = str(profile.client_name.value or "").strip()
+    if not name:
+        return
+    if len(name) < 4 or " " not in name:
+        return
+    try:
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(name)}"
+        resp = requests.get(url, timeout=2.0)
+        if resp.status_code != 200:
+            profile.external_client_research_notes.append(
+                "No reliable public-profile hit was retrieved for the client name; keeping case-study text as the source of truth."
+            )
+            return
+        data = resp.json()
+        summary = (data.get("extract") or "").strip()
+        title = (data.get("title") or name).strip()
+        page = ((data.get("content_urls") or {}).get("desktop") or {}).get("page")
+        if summary:
+            profile.external_client_research_notes.append(
+                f"Public profile match for '{title}': {summary[:360]}"
+            )
+            if page:
+                profile.external_research_sources.append(page)
+    except Exception:
+        profile.external_client_research_notes.append(
+            "External client-context lookup was unavailable in this environment; no outside facts were added."
+        )
 
 
 def load_client_profile(path: str | Path) -> ClientProfile:

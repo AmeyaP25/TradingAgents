@@ -319,6 +319,45 @@ function tradeLabel(sig) {
   return `<span class="${cls}" title="${esc(t.rationale)}">${esc(t.side)} ${num(t.shares, t.shares % 1 ? 3 : 0)}</span>`;
 }
 
+async function applySuggestedBuy() {
+  const tkr = state.selected;
+  const sig = state.signals[tkr];
+  const t = sig?.trade_suggestion || {};
+  if (!tkr || t.side !== "BUY" || !t.shares || t.shares <= 0) {
+    return toast("No buy suggestion is available for this stock right now.", "warn");
+  }
+  const existing = state.holdings.find((h) => h.ticker === tkr);
+  const q = state.quotes[tkr];
+  const px = q?.available ? Number(q.price) : Number(sig?.indicators?.price);
+  if (!px || px <= 0) {
+    return toast("Price unavailable, so buy autofill cannot run.", "warn");
+  }
+  const oldShares = Number(existing?.shares || 0);
+  const oldCost = existing?.cost_basis != null ? Number(existing.cost_basis) : null;
+  const newShares = oldShares + Number(t.shares);
+  const newCost = (oldCost != null && oldShares > 0)
+    ? ((oldShares * oldCost + Number(t.shares) * px) / newShares)
+    : px;
+  try {
+    state.holdings = await api("POST", "/api/holdings", {
+      ticker: tkr,
+      shares: newShares,
+      cost_basis: Number(newCost.toFixed(4)),
+      stop_loss_pct: existing?.stop_loss_pct ?? null,
+      notes: existing?.notes || "",
+    });
+    renderHoldings();
+    renderPicker();
+    updateStepBadges();
+    await pollQuotes();
+    await refreshSignals([tkr]);
+    await checkAlertsNow(true);
+    toast(`Added ${num(t.shares, t.shares % 1 ? 3 : 0)} ${tkr} share(s) to holdings from the buy suggestion.`, "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
 document.querySelector("#holdingsTable tbody").addEventListener("click", (e) => {
   const rm = e.target.closest("[data-remove]");
   if (rm) {
@@ -575,7 +614,10 @@ function renderSignal() {
           <div class="sub">${esc(t.rationale)}${t.est_value ? ` · about ${money(t.est_value, cur)}` : ""}</div>
           ${(t.assumptions || []).map((a) => `<div class="sub">Assumption: ${esc(a)}</div>`).join("")}
         </div>
-        <span class="tag">Suggestion only · you place the trade</span>
+        <div class="row tight">
+          ${t.side === "BUY" && t.shares ? `<button id="buySuggestedBtn" class="btn primary small">Buy ${num(t.shares, t.shares % 1 ? 3 : 0)} shares</button>` : ""}
+          <span class="tag">Suggestion only · you place the trade</span>
+        </div>
       </div>`
     : `<div class="trade-box"><div><div class="big">No trade now</div><div class="sub">${esc(t.rationale || "Keep monitoring; you will get an alert if this changes.")}</div></div></div>`;
 
@@ -612,6 +654,8 @@ function renderSignal() {
   const tag = $("signalProfileTag");
   tag.textContent = s.profile_applied ? "Profile applied" : "No approved profile";
   tag.className = `tag ${s.profile_applied ? "ok" : "warn"}`;
+  const buyBtn = $("buySuggestedBtn");
+  if (buyBtn) buyBtn.addEventListener("click", applySuggestedBuy);
   renderQuickPriceAlerts(s);
   drawChart();
 }
@@ -722,10 +766,44 @@ async function runAnalysis() {
 const signalRank = { BUY: 6, ADD: 6, OVERWEIGHT: 5, HOLD: 4, WAIT: 3, UNDERWEIGHT: 2, TRIM: 2, AVOID: 1, SELL: 1 };
 const confRank = { high: 3, medium: 2, low: 1 };
 
-function renderScan(rows) {
+function isProfitSeekingSignal(s) {
+  return ["BUY", "ADD", "OVERWEIGHT"].includes(String(s || "").toUpperCase());
+}
+
+function isConfidenceGood(conf) {
+  return ["high", "medium"].includes(String(conf || "").toLowerCase());
+}
+
+function looksClientAlignedFromNotes(notes) {
+  const t = String(notes || "").toLowerCase();
+  if (!t) return true;
+  return !(/not provided|uncertain suitability|outside funding|constraint violation|violat/i.test(t));
+}
+
+function explainRejectedQuick(s) {
+  if (!isProfitSeekingSignal(s.action)) return "Not a profit-seeking signal (BUY/ADD only).";
+  if (!isConfidenceGood(s.confidence)) return "Signal confidence is low.";
+  if (!s.profile_applied) return "No approved client profile applied.";
+  if (!looksClientAlignedFromNotes((s.client_fit || []).join(" "))) return "Signal does not clearly align with client-fit notes.";
+  return "Filtered by suitability gate.";
+}
+
+function explainRejectedDeep(row) {
+  if (!isProfitSeekingSignal(row.signal)) return "Not a profit-seeking recommendation (BUY/OVERWEIGHT/ADD only).";
+  if (!isConfidenceGood(row.confidence)) return "Recommendation confidence is low.";
+  if (!looksClientAlignedFromNotes(row.notes)) return "Client-fit notes show suitability concerns.";
+  if (row.blockingViolations > 0) return "Blocking client-constraint violation detected.";
+  return "Filtered by suitability gate.";
+}
+
+function renderScan(rows, rejected = []) {
   const tbody = document.querySelector("#scanTable tbody");
-  if (!rows.length) {
+  if (!rows.length && !rejected.length) {
     tbody.innerHTML = '<tr><td colspan="7" class="empty">No scan results yet.</td></tr>';
+    return;
+  }
+  if (!rows.length && rejected.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">No candidates passed the profit + client-alignment gate.\n${esc(rejected[0].reason || "")}</td></tr>`;
     return;
   }
   tbody.innerHTML = rows
@@ -753,46 +831,64 @@ function sortScan(rows) {
 
 async function runQuickScan() {
   const tickers = scanTickers();
+  if (!state.approved) return toast("Approve a client profile first; scan gating depends on client beliefs.", "warn");
   if (!tickers.length) return toast("Enter at least one ticker.", "warn");
   await busy($("runQuickScanBtn"), async () => {
     const rows = [];
+    const rejected = [];
     const queue = [...tickers];
     const worker = async () => {
       while (queue.length) {
         const t = queue.shift();
         try {
           const s = await api("GET", `/api/signal/${encodeURIComponent(t)}`);
-          rows.push({ ticker: t, signal: s.action, score: s.score, confidence: s.confidence, price: s.quote?.price ?? s.indicators?.price, notes: (s.reasons || [])[0] || "" });
+          const row = { ticker: t, signal: s.action, score: s.score, confidence: s.confidence, price: s.quote?.price ?? s.indicators?.price, notes: (s.reasons || [])[0] || "" };
+          if (isProfitSeekingSignal(s.action) && isConfidenceGood(s.confidence) && s.profile_applied && looksClientAlignedFromNotes((s.client_fit || []).join(" "))) rows.push(row);
+          else rejected.push({ ticker: t, reason: explainRejectedQuick(s) });
         } catch (err) {
-          rows.push({ ticker: t, signal: "UNAVAILABLE", confidence: "", notes: err.message });
+          rejected.push({ ticker: t, reason: err.message });
         }
-        renderScan(sortScan([...rows]));
+        renderScan(sortScan([...rows]), rejected);
       }
     };
     await Promise.all([worker(), worker(), worker()]);
-    const top = sortScan(rows)[0];
-    toast(`Quick scan done. Top: ${top.ticker} (${top.signal}). Click a row for details.`, "ok");
+    const ordered = sortScan(rows);
+    if (!ordered.length) {
+      toast("No candidate passed the profit + client-alignment gate. Try different tickers or relax constraints.", "warn");
+      return;
+    }
+    const top = ordered[0];
+    toast(`Quick scan done. Top aligned candidate: ${top.ticker} (${top.signal}).`, "ok");
   });
 }
 
 async function runDeepScan() {
   const tickers = scanTickers();
+  if (!state.approved) return toast("Approve a client profile first; deep scan gating depends on client beliefs.", "warn");
   if (!tickers.length) return toast("Enter at least one ticker.", "warn");
   await busy($("runScanBtn"), async () => {
     const rows = [];
+    const rejected = [];
     for (let i = 0; i < tickers.length; i++) {
       const t = tickers[i];
       toast(`Deep scanning ${t} (${i + 1}/${tickers.length})…`);
       try {
         const data = await api("POST", "/analyze", { ...sharedRunPayload(), ticker: t });
         const r = data.structured_recommendation_report || {};
-        rows.push({ ticker: t, signal: String(data.signal || "REVIEW").toUpperCase(), confidence: r.confidence, notes: String(r.client_fit || "").slice(0, 140) });
+        const blockingViolations = (data.client_constraint_violations || []).filter((v) => String(v.severity || "").toLowerCase() === "blocking").length;
+        const row = { ticker: t, signal: String(data.signal || "REVIEW").toUpperCase(), confidence: r.confidence, notes: String(r.client_fit || "").slice(0, 140), blockingViolations };
+        if (isProfitSeekingSignal(row.signal) && isConfidenceGood(row.confidence) && looksClientAlignedFromNotes(row.notes) && blockingViolations === 0) rows.push(row);
+        else rejected.push({ ticker: t, reason: explainRejectedDeep(row) });
       } catch (err) {
-        rows.push({ ticker: t, signal: "REVIEW", notes: `Error: ${err.message}` });
+        rejected.push({ ticker: t, reason: `Error: ${err.message}` });
       }
-      renderScan(sortScan([...rows]));
+      renderScan(sortScan([...rows]), rejected);
     }
-    toast("Deep AI scan complete.", "ok");
+    if (!rows.length) {
+      toast("Deep scan found no candidates that passed the profit + client-alignment gate.", "warn");
+      return;
+    }
+    toast("Deep AI scan complete with client-aligned candidates only.", "ok");
   });
 }
 
